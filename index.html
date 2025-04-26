@@ -3,8 +3,9 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Photorealistic Spinning Earth Enhanced</title>
-    <script src="https://cdn.tailwindcss.com"></script> <style>
+    <title>Photorealistic Spinning Earth Enhanced with Labels</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
         /* Basic styling */
         body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; } /* Added Inter font */
         canvas { display: block; }
@@ -46,6 +47,16 @@
          /* Ensure line width works (might require specific Three.js versions or extensions) */
         canvas { touch-action: none; } /* Prevent default touch actions like scrolling */
 
+        /* Styling for the 3D text labels (optional if needed) */
+        .label {
+            color: white;
+            font-family: sans-serif;
+            padding: 2px 5px;
+            background: rgba(0, 0, 0, 0.6);
+            border-radius: 3px;
+            font-size: 12px; /* Adjust as needed */
+        }
+
     </style>
      <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -76,21 +87,20 @@
         const toggleLabelsBtn = document.getElementById('toggleLabelsBtn');
 
         const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000); // Adjusted FOV slightly
-        camera.position.z = 4; // Adjusted camera distance
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+        camera.position.z = 4;
 
-        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true }); // Alpha true for potential transparency needs
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.setPixelRatio(window.devicePixelRatio);
         renderer.outputColorSpace = THREE.SRGBColorSpace;
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.1; // Slightly increased exposure
+        renderer.toneMappingExposure = 1.1;
 
         // --- Lighting (Enhanced Sunlight) ---
-        scene.add(new THREE.AmbientLight(0xffffff, 0.1)); // Even dimmer ambient
-
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 4.0); // Increased intensity further
-        directionalLight.position.set(15, 5, 10); // Positioned further out for more parallel rays
+        scene.add(new THREE.AmbientLight(0xffffff, 0.1));
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 4.0);
+        directionalLight.position.set(15, 5, 10);
         scene.add(directionalLight);
 
         // --- Texture Loading Manager ---
@@ -117,37 +127,37 @@
 
         // --- Earth Object ---
         const earthRadius = 1.5;
-        const earthSegments = 128; // Increased segments for smoother sphere and lines
+        const earthSegments = 128;
         const earthGeometry = new THREE.SphereGeometry(earthRadius, earthSegments, earthSegments);
         const earthMaterial = new THREE.MeshStandardMaterial({
             map: earthTexture,
             specularMap: earthSpecularMap,
             normalMap: earthNormalMap,
-            normalScale: new THREE.Vector2(0.8, 0.8), // Slightly increased normal intensity
-            metalness: 0.1, // Keep low metalness for Earth
-            roughness: 0.7, // Adjust roughness slightly
+            normalScale: new THREE.Vector2(0.8, 0.8),
+            metalness: 0.1,
+            roughness: 0.7,
         });
         const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 
         // --- Cloud Layer ---
-        const cloudGeometry = new THREE.SphereGeometry(earthRadius + 0.015, earthSegments, earthSegments); // Slightly larger
+        const cloudGeometry = new THREE.SphereGeometry(earthRadius + 0.015, earthSegments, earthSegments);
         const cloudMaterial = new THREE.MeshPhongMaterial({
             map: cloudTexture,
             transparent: true,
-            opacity: 0.5, // Slightly reduced opacity
+            opacity: 0.5,
             depthWrite: false,
         });
         const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
 
         // --- Atmosphere Glow (Shader Based) ---
-        const atmosphereRadius = earthRadius + 0.15; // Larger radius for the glow effect
+        const atmosphereRadius = earthRadius + 0.15;
         const atmosphereGeometry = new THREE.SphereGeometry(atmosphereRadius, earthSegments, earthSegments);
         const atmosphereVertexShader = `
             varying vec3 vNormal;
-            varying vec3 vPositionWorld; // Vertex position in world space
+            varying vec3 vPositionWorld;
 
             void main() {
-                vNormal = normalize( normalMatrix * normal ); // Normal in view space
+                vNormal = normalize( normalMatrix * normal );
                 vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
                 vPositionWorld = worldPosition.xyz;
                 gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
@@ -157,33 +167,21 @@
             varying vec3 vNormal;
             varying vec3 vPositionWorld;
 
-            uniform vec3 uSunDirection; // Direction of the sun light
-            uniform vec3 uGlowColor;    // Color of the glow
+            uniform vec3 uSunDirection;
+            uniform vec3 uGlowColor;
 
             void main() {
-                // Calculate intensity based on view direction (limb darkening/brightening)
                 vec3 viewDirection = normalize(cameraPosition - vPositionWorld);
-                float viewDotNormal = dot(viewDirection, normalize(vNormal)); // Use world normal for consistency
+                float viewDotNormal = dot(viewDirection, normalize(vNormal));
+                float intensity = pow(1.0 - abs(viewDotNormal), 3.0); // Rim effect
 
-                // Use smoothstep for a soft edge, make it brighter at the very edge (grazing angle)
-                float intensity = pow(1.0 - abs(viewDotNormal), 3.0); // Power for falloff control (adjust exponent 3.0)
+                vec3 worldNormal = normalize( vec3(modelMatrix * vec4(normal, 0.0)) );
+                float sunDotNormal = max(0.0, dot(worldNormal, uSunDirection));
+                float sunAngleIntensity = smoothstep(0.0, 0.4, sunDotNormal);
 
-                // --- Attempt at Sunlight Scattering ---
-                // Calculate angle between surface normal and sun direction
-                // Note: Using a simplified model here. Real scattering is complex.
-                vec3 worldNormal = normalize( vec3(modelMatrix * vec4(normal, 0.0)) ); // World normal
-                float sunDotNormal = max(0.0, dot(worldNormal, uSunDirection)); // Light intensity factor
-                float sunAngleIntensity = smoothstep(0.0, 0.4, sunDotNormal); // Glow stronger on lit side
+                float finalIntensity = intensity * (0.5 + sunAngleIntensity * 1.5);
 
-                // Combine view-based glow and sun-based glow
-                float finalIntensity = intensity * (0.5 + sunAngleIntensity * 1.5); // Mix factors
-
-                // Make glow slightly stronger on the side facing away from the sun (optional atmospheric scattering look)
-                // float backscatter = pow(max(0.0, dot(viewDirection, -uSunDirection)), 4.0) * 0.5;
-                // finalIntensity += backscatter;
-
-
-                gl_FragColor = vec4( uGlowColor, finalIntensity * 0.8 ); // Apply intensity to alpha, adjust multiplier (0.8)
+                gl_FragColor = vec4( uGlowColor, finalIntensity * 0.8 );
             }
         `;
 
@@ -192,27 +190,28 @@
             fragmentShader: atmosphereFragmentShader,
             uniforms: {
                 uSunDirection: { value: new THREE.Vector3().copy(directionalLight.position).normalize() },
-                uGlowColor: { value: new THREE.Color(0x87ceeb) } // Sky blue color
+                uGlowColor: { value: new THREE.Color(0x87ceeb) }
             },
             transparent: true,
-            blending: THREE.AdditiveBlending, // Additive blending for a brighter glow
-            side: THREE.BackSide, // Render the inside surface facing outwards
+            blending: THREE.AdditiveBlending,
+            side: THREE.BackSide,
             depthWrite: false
         });
         const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
 
 
         // --- Axis Object ---
-        const axisPoints = [ new THREE.Vector3( 0, -earthRadius * 1.8, 0 ), new THREE.Vector3( 0, earthRadius * 1.8, 0 ) ]; // Longer axis
+        const axisPoints = [ new THREE.Vector3( 0, -earthRadius * 1.8, 0 ), new THREE.Vector3( 0, earthRadius * 1.8, 0 ) ];
         const axisGeometry = new THREE.BufferGeometry().setFromPoints( axisPoints );
-        const axisMaterial = new THREE.LineBasicMaterial( { color: 0xff3333, linewidth: 1.5 } ); // Slightly thinner, brighter red
+        const axisMaterial = new THREE.LineBasicMaterial( { color: 0xff3333, linewidth: 1 } ); // Note: linewidth > 1 might not work
         const axisLine = new THREE.Line( axisGeometry, axisMaterial );
 
         // --- Lat/Long Grid Lines ---
-        const gridSegments = 32; // Number of longitude lines / latitude segments
-        const gridGeometry = new THREE.SphereGeometry(earthRadius + 0.005, gridSegments, gridSegments); // Slightly above surface
+        const gridSegments = 32;
+        const gridGeometry = new THREE.SphereGeometry(earthRadius + 0.005, gridSegments, gridSegments);
         const gridWireframe = new THREE.WireframeGeometry(gridGeometry);
-        const gridMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 0.5, transparent: true, opacity: 0.2 }); // Thin, semi-transparent white
+        // *** FIX: Increased opacity for better visibility ***
+        const gridMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 1, transparent: true, opacity: 0.5 }); // Increased opacity
         const gridLines = new THREE.LineSegments(gridWireframe, gridMaterial);
         gridLines.visible = false; // Initially hidden
 
@@ -225,15 +224,16 @@
             const radius = earthRadius + 0.006; // Slightly above surface
             const latitudeRad = latitudeDegrees * Math.PI / 180;
             for (let i = 0; i <= segments; i++) {
-                const angle = (i / segments) * Math.PI * 2;
+                const angle = (i / segments) * Math.PI * 2; // Longitude
                 const x = radius * Math.cos(latitudeRad) * Math.cos(angle);
                 const y = radius * Math.sin(latitudeRad);
                 const z = radius * Math.cos(latitudeRad) * Math.sin(angle);
                 points.push(new THREE.Vector3(x, y, z));
             }
             const geometry = new THREE.BufferGeometry().setFromPoints(points);
-            const material = new THREE.LineBasicMaterial({ color: color, linewidth: 1.5 }); // Slightly thicker lines for labels
-            return new THREE.LineLoop(geometry, material);
+             // Note: linewidth > 1 might not work consistently
+            const material = new THREE.LineBasicMaterial({ color: color, linewidth: 1.5 });
+            return new THREE.LineLoop(geometry, material); // Use LineLoop to connect end points
         }
 
         const equatorLine = createLatitudeLine(0, 0xff0000); // Red
@@ -248,14 +248,87 @@
         labelLinesGroup.add(arcticCircleLine);
         labelLinesGroup.add(antarcticCircleLine);
 
+        // --- Text Labels for Geographic Lines ---
+        const labelsGroup = new THREE.Group(); // Group for text sprites
+        labelsGroup.visible = false; // Initially hidden
+
+        // Function to create text labels as sprites
+        function createTextLabelSprite(text, color, fontSize = 32, scaleFactor = 0.003) {
+            const canvas = document.createElement('canvas');
+            const context = canvas.getContext('2d');
+            context.font = `Bold ${fontSize}px Arial`; // Font style
+
+            // Measure text to set canvas size
+            const metrics = context.measureText(text);
+            const textWidth = metrics.width;
+            const textHeight = fontSize * 1.2; // Approximate height
+
+            canvas.width = textWidth;
+            canvas.height = textHeight;
+
+            // Redraw text on sized canvas
+            context.font = `Bold ${fontSize}px Arial`;
+            context.fillStyle = color;
+            context.textAlign = 'center';
+            context.textBaseline = 'middle';
+            context.fillText(text, canvas.width / 2, canvas.height / 2);
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.needsUpdate = true;
+
+            const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }); // depthTest false keeps labels visible
+            const sprite = new THREE.Sprite(material);
+
+            // Scale the sprite
+            sprite.scale.set(canvas.width * scaleFactor, canvas.height * scaleFactor, 1.0);
+
+            return sprite;
+        }
+
+        // Function to calculate position on sphere
+        function getPositionOnSphere(latitudeDegrees, longitudeDegrees, radius) {
+             const latitudeRad = latitudeDegrees * Math.PI / 180;
+             const longitudeRad = longitudeDegrees * Math.PI / 180;
+             const x = radius * Math.cos(latitudeRad) * Math.cos(longitudeRad);
+             const y = radius * Math.sin(latitudeRad);
+             const z = radius * Math.cos(latitudeRad) * Math.sin(longitudeRad);
+             return new THREE.Vector3(x, y, z);
+        }
+
+        // Create and position labels slightly above the lines
+        const labelRadius = earthRadius + 0.05; // Place labels a bit further out
+        const labelLongitude = 0; // Place labels near the prime meridian (adjust if needed)
+
+        const equatorLabel = createTextLabelSprite('Equator', '#FF0000'); // Red text
+        equatorLabel.position.copy(getPositionOnSphere(0, labelLongitude, labelRadius));
+
+        const cancerLabel = createTextLabelSprite('Tropic of Cancer', '#FFFF00'); // Yellow text
+        cancerLabel.position.copy(getPositionOnSphere(23.5, labelLongitude, labelRadius));
+
+        const capricornLabel = createTextLabelSprite('Tropic of Capricorn', '#FFFF00'); // Yellow text
+        capricornLabel.position.copy(getPositionOnSphere(-23.5, labelLongitude, labelRadius));
+
+        const arcticLabel = createTextLabelSprite('Arctic Circle', '#00FFFF'); // Cyan text
+        arcticLabel.position.copy(getPositionOnSphere(66.5, labelLongitude, labelRadius));
+
+        const antarcticLabel = createTextLabelSprite('Antarctic Circle', '#00FFFF'); // Cyan text
+        antarcticLabel.position.copy(getPositionOnSphere(-66.5, labelLongitude, labelRadius));
+
+        labelsGroup.add(equatorLabel);
+        labelsGroup.add(cancerLabel);
+        labelsGroup.add(capricornLabel);
+        labelsGroup.add(arcticLabel);
+        labelsGroup.add(antarcticLabel);
+
         // --- Grouping and Tilting ---
         const earthGroup = new THREE.Group();
         earthGroup.add(earth);
         earthGroup.add(clouds);
-        earthGroup.add(atmosphere); // Add atmosphere glow
+        earthGroup.add(atmosphere);
         earthGroup.add(axisLine);
-        earthGroup.add(gridLines);      // Add grid lines
+        earthGroup.add(gridLines);       // Add grid lines
         earthGroup.add(labelLinesGroup); // Add label lines
+        earthGroup.add(labelsGroup);     // Add text labels
 
         const axialTilt = 23.5 * Math.PI / 180;
         earthGroup.rotation.z = axialTilt;
@@ -264,9 +337,9 @@
         // --- Stars Background ---
         const starGeometry = new THREE.BufferGeometry();
         const starVertices = [];
-        const starCount = 20000; // Even more stars
+        const starCount = 20000;
         for (let i = 0; i < starCount; i++) {
-            const x = THREE.MathUtils.randFloatSpread(3000); // Use Three.js utils
+            const x = THREE.MathUtils.randFloatSpread(3000);
             const y = THREE.MathUtils.randFloatSpread(3000);
             const z = THREE.MathUtils.randFloatSpread(3000);
              // Ensure stars are reasonably far out
@@ -277,10 +350,10 @@
         starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
         const starMaterial = new THREE.PointsMaterial({
             color: 0xffffff,
-            size: 0.8, // Slightly larger stars
+            size: 0.8,
             sizeAttenuation: true,
             transparent: true,
-            opacity: 0.8 // Slightly transparent stars
+            opacity: 0.8
         });
         const stars = new THREE.Points(starGeometry, starMaterial);
         scene.add(stars);
@@ -288,47 +361,54 @@
         // --- Controls ---
         const controls = new THREE.OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.04; // Slightly faster damping
+        controls.dampingFactor = 0.04;
         controls.screenSpacePanning = false;
-        controls.minDistance = 2.2; // Allow closer zoom
-        controls.maxDistance = 30;  // Allow zooming further out
+        controls.minDistance = 2.2;
+        controls.maxDistance = 30;
         controls.autoRotate = false;
 
         // --- Event Listeners for Buttons ---
         toggleGridBtn.addEventListener('click', () => {
             gridLines.visible = !gridLines.visible;
-            toggleGridBtn.classList.toggle('active', gridLines.visible); // Toggle active style
+            toggleGridBtn.classList.toggle('active', gridLines.visible);
         });
 
         toggleLabelsBtn.addEventListener('click', () => {
-            labelLinesGroup.visible = !labelLinesGroup.visible;
-             toggleLabelsBtn.classList.toggle('active', labelLinesGroup.visible); // Toggle active style
+            const shouldBeVisible = !labelLinesGroup.visible; // Determine target state based on lines
+            labelLinesGroup.visible = shouldBeVisible;
+            labelsGroup.visible = shouldBeVisible; // Toggle text labels visibility too
+            toggleLabelsBtn.classList.toggle('active', shouldBeVisible); // Toggle active style based on visibility
         });
 
          // --- Touch Controls for Buttons (Prevent OrbitControls interference) ---
-         // Stop propagation on touchstart to prevent OrbitControls from capturing the event
          document.getElementById('hud').addEventListener('touchstart', (event) => {
              event.stopPropagation();
-         }, { passive: false }); // Need passive: false to allow stopPropagation
+         }, { passive: false });
 
 
         // --- Animation Loop ---
-        const clock = new THREE.Clock(); // Clock for time-based rotation
+        const clock = new THREE.Clock();
         function animate() {
             requestAnimationFrame(animate);
-            const delta = clock.getDelta(); // Time since last frame
+            const delta = clock.getDelta();
 
-            // Rotate Earth and Clouds (time-based for smoother rotation)
-            earth.rotation.y += 0.1 * delta; // Adjust speed factor (0.1 radians/sec)
-            clouds.rotation.y += 0.12 * delta; // Slightly faster clouds
+            // Rotate Earth and Clouds
+            earth.rotation.y += 0.1 * delta;
+            clouds.rotation.y += 0.12 * delta;
 
             // Rotate stars slowly
             stars.rotation.y -= 0.005 * delta;
 
-            // Update shader uniforms if needed (e.g., if light moves)
-            // atmosphereMaterial.uniforms.uSunDirection.value.copy(directionalLight.position).normalize(); // Uncomment if light moves
+            // Update shader uniforms if needed
+            // atmosphereMaterial.uniforms.uSunDirection.value.copy(directionalLight.position).normalize();
 
-            controls.update(); // Required for damping
+            // Make labels always face the camera
+            labelsGroup.children.forEach(label => {
+                label.quaternion.copy(camera.quaternion);
+            });
+
+
+            controls.update();
             renderer.render(scene, camera);
         }
 
@@ -340,8 +420,7 @@
         }
         window.addEventListener('resize', onWindowResize, false);
 
-        // --- Start ---
-        // Animation is started by the LoadingManager's onLoad callback
+        // --- Start --- (Handled by LoadingManager onLoad)
 
     </script>
 </body>
