@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photorealistic Spinning Earth Enhanced</title>
+    <script src="https://cdn.tailwindcss.com"></script> <style>
+        /* Basic styling */
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; } /* Added Inter font */
+        canvas { display: block; }
+        /* Style for loading message */
+        #loadingMessage {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-family: sans-serif;
+            font-size: 1.5em;
+            text-align: center;
+            z-index: 100; /* Ensure it's above the canvas and HUD */
+        }
+        /* HUD Styling */
+        #hud {
+            position: absolute;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 50; /* Above canvas, below loading */
+            display: flex;
+            gap: 10px; /* Spacing between buttons */
+        }
+        /* Custom button styling (Tailwind classes applied in HTML) */
+        .hud-button {
+            /* Base styles defined using Tailwind below */
+            transition: background-color 0.3s ease, transform 0.1s ease;
+        }
+        .hud-button:active {
+            transform: scale(0.95); /* Click effect */
+        }
+        .hud-button.active {
+             background-color: #3b82f6; /* Blue-600 for active state */
+             color: white;
+        }
+
+         /* Ensure line width works (might require specific Three.js versions or extensions) */
+        canvas { touch-action: none; } /* Prevent default touch actions like scrolling */
+
+    </style>
+     <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div id="loadingMessage">Loading textures...</div>
+
+    <div id="hud">
+        <button id="toggleGridBtn" class="hud-button bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-md">
+            Toggle Grid
+        </button>
+        <button id="toggleLabelsBtn" class="hud-button bg-gray-700 hover:bg-gray-600 text-white text-sm font-semibold py-2 px-4 rounded-lg shadow-md">
+            Toggle Labels
+        </button>
+    </div>
+
+    <canvas id="earthCanvas"></canvas>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        // --- Basic Setup ---
+        const canvas = document.getElementById('earthCanvas');
+        const loadingMessage = document.getElementById('loadingMessage');
+        const toggleGridBtn = document.getElementById('toggleGridBtn');
+        const toggleLabelsBtn = document.getElementById('toggleLabelsBtn');
+
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000); // Adjusted FOV slightly
+        camera.position.z = 4; // Adjusted camera distance
+
+        const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true }); // Alpha true for potential transparency needs
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1; // Slightly increased exposure
+
+        // --- Lighting (Enhanced Sunlight) ---
+        scene.add(new THREE.AmbientLight(0xffffff, 0.1)); // Even dimmer ambient
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 4.0); // Increased intensity further
+        directionalLight.position.set(15, 5, 10); // Positioned further out for more parallel rays
+        scene.add(directionalLight);
+
+        // --- Texture Loading Manager ---
+        const manager = new THREE.LoadingManager();
+        manager.onLoad = () => {
+            loadingMessage.style.display = 'none';
+            animate(); // Start animation only after textures load
+        };
+        manager.onError = (url) => {
+            console.error('Error loading ' + url);
+            loadingMessage.textContent = 'Error loading textures. Refresh might help.';
+        };
+        const textureLoader = new THREE.TextureLoader(manager);
+
+        // --- Texture Loading ---
+        const textureLoadError = (name) => (err) => console.error(`Error loading ${name}:`, err);
+        const earthTexture = textureLoader.load('https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg', undefined, undefined, textureLoadError('Earth Color'));
+        earthTexture.colorSpace = THREE.SRGBColorSpace;
+        const earthSpecularMap = textureLoader.load('https://threejs.org/examples/textures/planets/earth_specular_2048.jpg', undefined, undefined, textureLoadError('Earth Specular'));
+        earthSpecularMap.colorSpace = THREE.SRGBColorSpace;
+        const earthNormalMap = textureLoader.load('https://raw.githubusercontent.com/mrdoob/three.js/dev/examples/textures/planets/earth_normal_2048.jpg', undefined, undefined, textureLoadError('Earth Normal'));
+        const cloudTexture = textureLoader.load('https://threejs.org/examples/textures/planets/earth_clouds_1024.png', undefined, undefined, textureLoadError('Cloud'));
+        cloudTexture.colorSpace = THREE.SRGBColorSpace;
+
+        // --- Earth Object ---
+        const earthRadius = 1.5;
+        const earthSegments = 128; // Increased segments for smoother sphere and lines
+        const earthGeometry = new THREE.SphereGeometry(earthRadius, earthSegments, earthSegments);
+        const earthMaterial = new THREE.MeshStandardMaterial({
+            map: earthTexture,
+            specularMap: earthSpecularMap,
+            normalMap: earthNormalMap,
+            normalScale: new THREE.Vector2(0.8, 0.8), // Slightly increased normal intensity
+            metalness: 0.1, // Keep low metalness for Earth
+            roughness: 0.7, // Adjust roughness slightly
+        });
+        const earth = new THREE.Mesh(earthGeometry, earthMaterial);
+
+        // --- Cloud Layer ---
+        const cloudGeometry = new THREE.SphereGeometry(earthRadius + 0.015, earthSegments, earthSegments); // Slightly larger
+        const cloudMaterial = new THREE.MeshPhongMaterial({
+            map: cloudTexture,
+            transparent: true,
+            opacity: 0.5, // Slightly reduced opacity
+            depthWrite: false,
+        });
+        const clouds = new THREE.Mesh(cloudGeometry, cloudMaterial);
+
+        // --- Atmosphere Glow (Shader Based) ---
+        const atmosphereRadius = earthRadius + 0.15; // Larger radius for the glow effect
+        const atmosphereGeometry = new THREE.SphereGeometry(atmosphereRadius, earthSegments, earthSegments);
+        const atmosphereVertexShader = `
+            varying vec3 vNormal;
+            varying vec3 vPositionWorld; // Vertex position in world space
+
+            void main() {
+                vNormal = normalize( normalMatrix * normal ); // Normal in view space
+                vec4 worldPosition = modelMatrix * vec4( position, 1.0 );
+                vPositionWorld = worldPosition.xyz;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+            }
+        `;
+        const atmosphereFragmentShader = `
+            varying vec3 vNormal;
+            varying vec3 vPositionWorld;
+
+            uniform vec3 uSunDirection; // Direction of the sun light
+            uniform vec3 uGlowColor;    // Color of the glow
+
+            void main() {
+                // Calculate intensity based on view direction (limb darkening/brightening)
+                vec3 viewDirection = normalize(cameraPosition - vPositionWorld);
+                float viewDotNormal = dot(viewDirection, normalize(vNormal)); // Use world normal for consistency
+
+                // Use smoothstep for a soft edge, make it brighter at the very edge (grazing angle)
+                float intensity = pow(1.0 - abs(viewDotNormal), 3.0); // Power for falloff control (adjust exponent 3.0)
+
+                // --- Attempt at Sunlight Scattering ---
+                // Calculate angle between surface normal and sun direction
+                // Note: Using a simplified model here. Real scattering is complex.
+                vec3 worldNormal = normalize( vec3(modelMatrix * vec4(normal, 0.0)) ); // World normal
+                float sunDotNormal = max(0.0, dot(worldNormal, uSunDirection)); // Light intensity factor
+                float sunAngleIntensity = smoothstep(0.0, 0.4, sunDotNormal); // Glow stronger on lit side
+
+                // Combine view-based glow and sun-based glow
+                float finalIntensity = intensity * (0.5 + sunAngleIntensity * 1.5); // Mix factors
+
+                // Make glow slightly stronger on the side facing away from the sun (optional atmospheric scattering look)
+                // float backscatter = pow(max(0.0, dot(viewDirection, -uSunDirection)), 4.0) * 0.5;
+                // finalIntensity += backscatter;
+
+
+                gl_FragColor = vec4( uGlowColor, finalIntensity * 0.8 ); // Apply intensity to alpha, adjust multiplier (0.8)
+            }
+        `;
+
+        const atmosphereMaterial = new THREE.ShaderMaterial({
+            vertexShader: atmosphereVertexShader,
+            fragmentShader: atmosphereFragmentShader,
+            uniforms: {
+                uSunDirection: { value: new THREE.Vector3().copy(directionalLight.position).normalize() },
+                uGlowColor: { value: new THREE.Color(0x87ceeb) } // Sky blue color
+            },
+            transparent: true,
+            blending: THREE.AdditiveBlending, // Additive blending for a brighter glow
+            side: THREE.BackSide, // Render the inside surface facing outwards
+            depthWrite: false
+        });
+        const atmosphere = new THREE.Mesh(atmosphereGeometry, atmosphereMaterial);
+
+
+        // --- Axis Object ---
+        const axisPoints = [ new THREE.Vector3( 0, -earthRadius * 1.8, 0 ), new THREE.Vector3( 0, earthRadius * 1.8, 0 ) ]; // Longer axis
+        const axisGeometry = new THREE.BufferGeometry().setFromPoints( axisPoints );
+        const axisMaterial = new THREE.LineBasicMaterial( { color: 0xff3333, linewidth: 1.5 } ); // Slightly thinner, brighter red
+        const axisLine = new THREE.Line( axisGeometry, axisMaterial );
+
+        // --- Lat/Long Grid Lines ---
+        const gridSegments = 32; // Number of longitude lines / latitude segments
+        const gridGeometry = new THREE.SphereGeometry(earthRadius + 0.005, gridSegments, gridSegments); // Slightly above surface
+        const gridWireframe = new THREE.WireframeGeometry(gridGeometry);
+        const gridMaterial = new THREE.LineBasicMaterial({ color: 0xffffff, linewidth: 0.5, transparent: true, opacity: 0.2 }); // Thin, semi-transparent white
+        const gridLines = new THREE.LineSegments(gridWireframe, gridMaterial);
+        gridLines.visible = false; // Initially hidden
+
+        // --- Geographic Label Lines (Equator, Tropics, Polar Circles) ---
+        const labelLinesGroup = new THREE.Group();
+        labelLinesGroup.visible = false; // Initially hidden
+
+        function createLatitudeLine(latitudeDegrees, color, segments = 128) {
+            const points = [];
+            const radius = earthRadius + 0.006; // Slightly above surface
+            const latitudeRad = latitudeDegrees * Math.PI / 180;
+            for (let i = 0; i <= segments; i++) {
+                const angle = (i / segments) * Math.PI * 2;
+                const x = radius * Math.cos(latitudeRad) * Math.cos(angle);
+                const y = radius * Math.sin(latitudeRad);
+                const z = radius * Math.cos(latitudeRad) * Math.sin(angle);
+                points.push(new THREE.Vector3(x, y, z));
+            }
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: color, linewidth: 1.5 }); // Slightly thicker lines for labels
+            return new THREE.LineLoop(geometry, material);
+        }
+
+        const equatorLine = createLatitudeLine(0, 0xff0000); // Red
+        const tropicOfCancerLine = createLatitudeLine(23.5, 0xffff00); // Yellow
+        const tropicOfCapricornLine = createLatitudeLine(-23.5, 0xffff00); // Yellow
+        const arcticCircleLine = createLatitudeLine(66.5, 0x00ffff); // Cyan
+        const antarcticCircleLine = createLatitudeLine(-66.5, 0x00ffff); // Cyan
+
+        labelLinesGroup.add(equatorLine);
+        labelLinesGroup.add(tropicOfCancerLine);
+        labelLinesGroup.add(tropicOfCapricornLine);
+        labelLinesGroup.add(arcticCircleLine);
+        labelLinesGroup.add(antarcticCircleLine);
+
+        // --- Grouping and Tilting ---
+        const earthGroup = new THREE.Group();
+        earthGroup.add(earth);
+        earthGroup.add(clouds);
+        earthGroup.add(atmosphere); // Add atmosphere glow
+        earthGroup.add(axisLine);
+        earthGroup.add(gridLines);      // Add grid lines
+        earthGroup.add(labelLinesGroup); // Add label lines
+
+        const axialTilt = 23.5 * Math.PI / 180;
+        earthGroup.rotation.z = axialTilt;
+        scene.add(earthGroup);
+
+        // --- Stars Background ---
+        const starGeometry = new THREE.BufferGeometry();
+        const starVertices = [];
+        const starCount = 20000; // Even more stars
+        for (let i = 0; i < starCount; i++) {
+            const x = THREE.MathUtils.randFloatSpread(3000); // Use Three.js utils
+            const y = THREE.MathUtils.randFloatSpread(3000);
+            const z = THREE.MathUtils.randFloatSpread(3000);
+             // Ensure stars are reasonably far out
+            if (Math.sqrt(x*x + y*y + z*z) > 200) {
+                 starVertices.push(x, y, z);
+            }
+        }
+        starGeometry.setAttribute('position', new THREE.Float32BufferAttribute(starVertices, 3));
+        const starMaterial = new THREE.PointsMaterial({
+            color: 0xffffff,
+            size: 0.8, // Slightly larger stars
+            sizeAttenuation: true,
+            transparent: true,
+            opacity: 0.8 // Slightly transparent stars
+        });
+        const stars = new THREE.Points(starGeometry, starMaterial);
+        scene.add(stars);
+
+        // --- Controls ---
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.04; // Slightly faster damping
+        controls.screenSpacePanning = false;
+        controls.minDistance = 2.2; // Allow closer zoom
+        controls.maxDistance = 30;  // Allow zooming further out
+        controls.autoRotate = false;
+
+        // --- Event Listeners for Buttons ---
+        toggleGridBtn.addEventListener('click', () => {
+            gridLines.visible = !gridLines.visible;
+            toggleGridBtn.classList.toggle('active', gridLines.visible); // Toggle active style
+        });
+
+        toggleLabelsBtn.addEventListener('click', () => {
+            labelLinesGroup.visible = !labelLinesGroup.visible;
+             toggleLabelsBtn.classList.toggle('active', labelLinesGroup.visible); // Toggle active style
+        });
+
+         // --- Touch Controls for Buttons (Prevent OrbitControls interference) ---
+         // Stop propagation on touchstart to prevent OrbitControls from capturing the event
+         document.getElementById('hud').addEventListener('touchstart', (event) => {
+             event.stopPropagation();
+         }, { passive: false }); // Need passive: false to allow stopPropagation
+
+
+        // --- Animation Loop ---
+        const clock = new THREE.Clock(); // Clock for time-based rotation
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta(); // Time since last frame
+
+            // Rotate Earth and Clouds (time-based for smoother rotation)
+            earth.rotation.y += 0.1 * delta; // Adjust speed factor (0.1 radians/sec)
+            clouds.rotation.y += 0.12 * delta; // Slightly faster clouds
+
+            // Rotate stars slowly
+            stars.rotation.y -= 0.005 * delta;
+
+            // Update shader uniforms if needed (e.g., if light moves)
+            // atmosphereMaterial.uniforms.uSunDirection.value.copy(directionalLight.position).normalize(); // Uncomment if light moves
+
+            controls.update(); // Required for damping
+            renderer.render(scene, camera);
+        }
+
+        // --- Handle Window Resize ---
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+        window.addEventListener('resize', onWindowResize, false);
+
+        // --- Start ---
+        // Animation is started by the LoadingManager's onLoad callback
+
+    </script>
+</body>
+</html>
